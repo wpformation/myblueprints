@@ -20,7 +20,6 @@ blueprint:
       selector:
         device:
           integration: mobile_app
-          multiple: true
     telegram_notifications:
       name: Activer les notifications Telegram
       description: Active ou désactive les notifications Telegram
