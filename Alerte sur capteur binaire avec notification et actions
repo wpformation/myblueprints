@@ -1,24 +1,38 @@
 blueprint:
-  name: Alerte sur capteur binaire avec notification et actions
+  name: Alerte multi-capteurs avec notification et actions
   description: >
-    Ce blueprint gère les alertes basées sur des capteurs binaires, permettant 
+    Ce blueprint gère les alertes basées sur plusieurs capteurs binaires, permettant 
     d'envoyer des notifications dynamiques, de déclencher des alertes vocales, 
     et d'allumer des lumières en rouge.
   domain: automation
   input:
-    binary_sensor:
-      name: Capteur déclencheur
-      description: Capteur binaire qui déclenche l'alerte (fumée, fuite, etc.)
+    binary_sensors:
+      name: Liste des capteurs déclencheurs
+      description: Liste des capteurs binaires qui déclenchent l'alerte (fumée, fuite, etc.)
       selector:
-        entity:
-          domain: binary_sensor
-    notify_targets:
-      name: Cibles de notification
-      description: Entités où envoyer les notifications
+        target:
+          entity:
+            domain: binary_sensor
+            multiple: true
+    phone_notifications:
+      name: Notifications téléphoniques
+      description: Liste des appareils mobiles à notifier
       selector:
         target:
           entity:
             domain: notify
+            multiple: true
+    telegram_notifications:
+      name: Notifications Telegram
+      description: Activer les notifications Telegram
+      default: false
+      selector:
+        boolean: {}
+    telegram_message:
+      name: Message Telegram
+      description: Message à envoyer via Telegram si activé
+      default: >
+        "Alerte ! {{ trigger.to_state.attributes.friendly_name }} s'est déclenché(e)."
     tts_targets:
       name: Enceintes pour TTS
       description: Entités media_player où envoyer l'alerte vocale
@@ -26,6 +40,7 @@ blueprint:
         target:
           entity:
             domain: media_player
+            multiple: true
     lights:
       name: Lumières à activer
       description: Lumières à allumer en rouge pour signaler l'alerte
@@ -33,11 +48,12 @@ blueprint:
         target:
           entity:
             domain: light
+            multiple: true
     alert_message:
       name: Message d'alerte
-      description: Message personnalisé à envoyer dans les notifications
+      description: Message personnalisé pour les notifications
       default: >
-        "Attention : {{ state_attr(binary_sensor, 'friendly_name') }} s'est déclenché(e)."
+        "Attention ! Le capteur {{ trigger.to_state.attributes.friendly_name }} dans la pièce {{ trigger.to_state.attributes.device_class }} a détecté une anomalie."
     delay_before_reset:
       name: Délai avant extinction des lumières
       description: Temps en secondes avant d'éteindre les lumières d'alerte
@@ -53,25 +69,33 @@ defaults:
 
 trigger:
   - platform: state
-    entity_id: !input binary_sensor
+    entity_id: !input binary_sensors
     to: 'on'
 
 action:
-  - service: notify.notify
-    data:
-      message: !input alert_message
-      target: !input notify_targets
+  - choose:
+      - conditions:
+          - condition: state
+            entity_id: !input phone_notifications
+        sequence:
+          - service: notify.notify
+            data:
+              message: !input alert_message
+              target: !input phone_notifications
 
-  - service: telegram_bot.send_message
-    data:
-      message: >
-        "Alerte ! {{ state_attr(binary_sensor, 'friendly_name') }} s'est déclenché(e)."
+      - conditions:
+          - condition: template
+            value_template: "{{ input.telegram_notifications }}"
+        sequence:
+          - service: telegram_bot.send_message
+            data:
+              message: !input telegram_message
 
   - service: tts.cloud_say
     data:
       entity_id: !input tts_targets
       message: >
-        "Attention : {{ state_attr(binary_sensor, 'friendly_name') }} détecte une anomalie. Merci de vérifier immédiatement."
+        "Attention : {{ trigger.to_state.attributes.friendly_name }} dans la pièce {{ trigger.to_state.attributes.device_class }} détecte une anomalie. Merci de vérifier immédiatement."
 
   - service: light.turn_on
     target: !input lights
