@@ -78,7 +78,8 @@ action:
             value_template: >
               {{ input.enable_phone_notifications and input.notify_device != '' }}
         sequence:
-          - service: notify.mobile_app_{{ device_attr(input.notify_device, 'name') | slugify }}
+          - service: >
+              notify.mobile_app_{{ device_attr(input.notify_device, 'name') | slugify }}
             data:
               message: !input alert_message
 
@@ -97,14 +98,26 @@ action:
       message: >
         "Attention : {{ trigger.to_state.attributes.friendly_name }} dans la pièce {{ trigger.to_state.attributes.device_class }} détecte une anomalie. Merci de vérifier immédiatement."
 
-  - service: light.turn_on
-    target: !input lights
-    data:
-      color_name: red
-      brightness: 255
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ input.lights | length > 0 }}"
+        sequence:
+          - service: light.turn_on
+            target:
+              entity_id: !input lights
+            data:
+              color_name: red
+              brightness: 255
 
   - delay:
       seconds: !input delay_before_reset
 
-  - service: light.turn_off
-    target: !input lights
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ input.lights | length > 0 }}"
+        sequence:
+          - service: light.turn_off
+            target:
+              entity_id: !input lights
