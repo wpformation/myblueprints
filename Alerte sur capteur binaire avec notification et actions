@@ -15,11 +15,10 @@ blueprint:
           multiple: true
     phone_notifications:
       name: Notifications téléphoniques
-      description: Liste des appareils mobiles à notifier
+      description: Liste des services `notify` pour les notifications téléphoniques
       selector:
-        entity:
-          domain: notify
-          multiple: true
+        target:
+          device: {}
     telegram_notifications:
       name: Notifications Telegram
       description: Activer les notifications Telegram
