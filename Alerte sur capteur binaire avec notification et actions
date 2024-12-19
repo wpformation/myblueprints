@@ -13,16 +13,22 @@ blueprint:
         entity:
           domain: binary_sensor
           multiple: true
+    enable_phone_notifications:
+      name: Activer les notifications téléphoniques
+      description: Active ou désactive les notifications téléphoniques
+      default: false
+      selector:
+        boolean: {}
     phone_notification_service:
       name: Service de notification téléphonique
-      description: Entité `notify` pour les notifications téléphoniques (optionnelle)
-      default: null
+      description: Entité `notify` pour les notifications téléphoniques
+      default: ''
       selector:
         entity:
           domain: notify
     telegram_notifications:
-      name: Notifications Telegram
-      description: Activer les notifications Telegram
+      name: Activer les notifications Telegram
+      description: Active ou désactive les notifications Telegram
       default: false
       selector:
         boolean: {}
@@ -69,20 +75,20 @@ action:
   - choose:
       - conditions:
           - condition: template
+            value_template: "{{ input.enable_phone_notifications and input.phone_notification_service != '' }}"
+        sequence:
+          - service: !input phone_notification_service
+            data:
+              message: !input alert_message
+
+  - choose:
+      - conditions:
+          - condition: template
             value_template: "{{ input.telegram_notifications }}"
         sequence:
           - service: telegram_bot.send_message
             data:
               message: !input telegram_message
-
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ input.phone_notification_service is not none }}"
-        sequence:
-          - service: !input phone_notification_service
-            data:
-              message: !input alert_message
 
   - service: tts.cloud_say
     data:
