@@ -16,7 +16,7 @@ blueprint:
     phone_notification_service:
       name: Service de notification téléphonique
       description: Entité `notify` pour les notifications téléphoniques (optionnelle)
-      default: ''
+      default: null
       selector:
         entity:
           domain: notify
@@ -78,7 +78,7 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ input.phone_notification_service != '' }}"
+            value_template: "{{ input.phone_notification_service is not none }}"
         sequence:
           - service: !input phone_notification_service
             data:
