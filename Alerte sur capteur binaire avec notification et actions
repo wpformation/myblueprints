@@ -13,19 +13,15 @@ blueprint:
         entity:
           domain: binary_sensor
           multiple: true
-    enable_phone_notifications:
-      name: Activer les notifications téléphoniques
-      description: Active ou désactive les notifications téléphoniques
-      default: false
+    notify_devices:
+      name: Appareils mobiles à notifier
+      description: Liste des appareils mobiles qui recevront les notifications (optionnel).
+      default: []
       selector:
-        boolean: {}
-    notify_device:
-      name: Appareil mobile à notifier
-      description: Appareil mobile qui recevra la notification (si activé).
-      default: ''
-      selector:
-        device:
-          integration: mobile_app
+        target:
+          entity:
+            domain: notify
+          multiple: true
     telegram_notifications:
       name: Activer les notifications Telegram
       description: Active ou désactive les notifications Telegram
@@ -76,17 +72,17 @@ action:
       - conditions:
           - condition: template
             value_template: >
-              {{ is_defined('enable_phone_notifications') and enable_phone_notifications and notify_device != '' }}
+              {{ notify_devices | length > 0 }}
         sequence:
-          - service: >
-              notify.mobile_app_{{ device_attr(notify_device, 'name') | slugify }}
+          - service: notify.notify
             data:
+              target: !input notify_devices
               message: !input alert_message
 
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ is_defined('telegram_notifications') and telegram_notifications }}"
+            value_template: "{{ telegram_notifications }}"
         sequence:
           - service: telegram_bot.send_message
             data:
@@ -101,7 +97,7 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ is_defined('lights') and lights | length > 0 }}"
+            value_template: "{{ lights | length > 0 }}"
         sequence:
           - service: light.turn_on
             data:
@@ -115,7 +111,7 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ is_defined('lights') and lights | length > 0 }}"
+            value_template: "{{ lights | length > 0 }}"
         sequence:
           - service: light.turn_off
             data:
