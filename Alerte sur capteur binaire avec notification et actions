@@ -10,16 +10,16 @@ blueprint:
       name: Liste des capteurs déclencheurs
       description: Liste des capteurs binaires qui déclenchent l'alerte (fumée, fuite, etc.)
       selector:
-        target:
-          entity:
-            domain: binary_sensor
+        entity:
+          domain: binary_sensor
+          multiple: true
     phone_notifications:
       name: Notifications téléphoniques
       description: Liste des appareils mobiles à notifier
       selector:
-        target:
-          entity:
-            domain: notify
+        entity:
+          domain: notify
+          multiple: true
     telegram_notifications:
       name: Notifications Telegram
       description: Activer les notifications Telegram
@@ -35,16 +35,16 @@ blueprint:
       name: Enceintes pour TTS
       description: Entités media_player où envoyer l'alerte vocale
       selector:
-        target:
-          entity:
-            domain: media_player
+        entity:
+          domain: media_player
+          multiple: true
     lights:
       name: Lumières à activer
       description: Lumières à allumer en rouge pour signaler l'alerte
       selector:
-        target:
-          entity:
-            domain: light
+        entity:
+          domain: light
+          multiple: true
     alert_message:
       name: Message d'alerte
       description: Message personnalisé pour les notifications
