@@ -76,7 +76,7 @@ action:
       - conditions:
           - condition: template
             value_template: >
-              {{ enable_phone_notifications and notify_device != '' }}
+              {{ is_defined('enable_phone_notifications') and enable_phone_notifications and notify_device != '' }}
         sequence:
           - service: >
               notify.mobile_app_{{ device_attr(notify_device, 'name') | slugify }}
@@ -86,7 +86,7 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ telegram_notifications }}"
+            value_template: "{{ is_defined('telegram_notifications') and telegram_notifications }}"
         sequence:
           - service: telegram_bot.send_message
             data:
@@ -101,7 +101,7 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ lights | length > 0 }}"
+            value_template: "{{ is_defined('lights') and lights | length > 0 }}"
         sequence:
           - service: light.turn_on
             data:
@@ -115,7 +115,7 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ lights | length > 0 }}"
+            value_template: "{{ is_defined('lights') and lights | length > 0 }}"
         sequence:
           - service: light.turn_off
             data:
