@@ -22,10 +22,11 @@ blueprint:
     phone_notification_service:
       name: Service de notification téléphonique
       description: Entité `notify` pour les notifications téléphoniques (optionnel, si activé)
+      default: null
       selector:
         entity:
           domain: notify
-          multiple: false
+          integration: mobile_app
     telegram_notifications:
       name: Activer les notifications Telegram
       description: Active ou désactive les notifications Telegram
@@ -75,7 +76,7 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ input.enable_phone_notifications and input.phone_notification_service is defined }}"
+            value_template: "{{ input.enable_phone_notifications and input.phone_notification_service is not none }}"
         sequence:
           - service: !input phone_notification_service
             data:
