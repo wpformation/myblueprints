@@ -13,7 +13,6 @@ blueprint:
         target:
           entity:
             domain: binary_sensor
-            multiple: true
     phone_notifications:
       name: Notifications téléphoniques
       description: Liste des appareils mobiles à notifier
@@ -21,7 +20,6 @@ blueprint:
         target:
           entity:
             domain: notify
-            multiple: true
     telegram_notifications:
       name: Notifications Telegram
       description: Activer les notifications Telegram
@@ -40,7 +38,6 @@ blueprint:
         target:
           entity:
             domain: media_player
-            multiple: true
     lights:
       name: Lumières à activer
       description: Lumières à allumer en rouge pour signaler l'alerte
@@ -48,7 +45,6 @@ blueprint:
         target:
           entity:
             domain: light
-            multiple: true
     alert_message:
       name: Message d'alerte
       description: Message personnalisé pour les notifications
@@ -75,21 +71,17 @@ trigger:
 action:
   - choose:
       - conditions:
-          - condition: state
-            entity_id: !input phone_notifications
-        sequence:
-          - service: notify.notify
-            data:
-              message: !input alert_message
-              target: !input phone_notifications
-
-      - conditions:
           - condition: template
-            value_template: "{{ input.telegram_notifications }}"
+            value_template: "{{ not is_state(input.telegram_notifications, 'false') }}"
         sequence:
           - service: telegram_bot.send_message
             data:
               message: !input telegram_message
+
+  - service: notify.notify
+    data:
+      message: !input alert_message
+      target: !input phone_notifications
 
   - service: tts.cloud_say
     data:
