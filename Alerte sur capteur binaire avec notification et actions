@@ -1,0 +1,86 @@
+blueprint:
+  name: Alerte sur capteur binaire avec notification et actions
+  description: >
+    Ce blueprint gère les alertes basées sur des capteurs binaires, permettant 
+    d'envoyer des notifications dynamiques, de déclencher des alertes vocales, 
+    et d'allumer des lumières en rouge.
+  domain: automation
+  input:
+    binary_sensor:
+      name: Capteur déclencheur
+      description: Capteur binaire qui déclenche l'alerte (fumée, fuite, etc.)
+      selector:
+        entity:
+          domain: binary_sensor
+    notify_targets:
+      name: Cibles de notification
+      description: Entités où envoyer les notifications
+      selector:
+        target:
+          entity:
+            domain: notify
+    tts_targets:
+      name: Enceintes pour TTS
+      description: Entités media_player où envoyer l'alerte vocale
+      selector:
+        target:
+          entity:
+            domain: media_player
+    lights:
+      name: Lumières à activer
+      description: Lumières à allumer en rouge pour signaler l'alerte
+      selector:
+        target:
+          entity:
+            domain: light
+    alert_message:
+      name: Message d'alerte
+      description: Message personnalisé à envoyer dans les notifications
+      default: >
+        "Attention : {{ state_attr(binary_sensor, 'friendly_name') }} s'est déclenché(e)."
+    delay_before_reset:
+      name: Délai avant extinction des lumières
+      description: Temps en secondes avant d'éteindre les lumières d'alerte
+      default: 60
+      selector:
+        number:
+          min: 10
+          max: 600
+          step: 5
+
+defaults:
+  mode: single
+
+trigger:
+  - platform: state
+    entity_id: !input binary_sensor
+    to: 'on'
+
+action:
+  - service: notify.notify
+    data:
+      message: !input alert_message
+      target: !input notify_targets
+
+  - service: telegram_bot.send_message
+    data:
+      message: >
+        "Alerte ! {{ state_attr(binary_sensor, 'friendly_name') }} s'est déclenché(e)."
+
+  - service: tts.cloud_say
+    data:
+      entity_id: !input tts_targets
+      message: >
+        "Attention : {{ state_attr(binary_sensor, 'friendly_name') }} détecte une anomalie. Merci de vérifier immédiatement."
+
+  - service: light.turn_on
+    target: !input lights
+    data:
+      color_name: red
+      brightness: 255
+
+  - delay:
+      seconds: !input delay_before_reset
+
+  - service: light.turn_off
+    target: !input lights
