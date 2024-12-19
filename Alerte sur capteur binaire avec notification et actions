@@ -13,10 +13,9 @@ blueprint:
         entity:
           domain: binary_sensor
           multiple: true
-    notify_devices:
-      name: Appareils mobiles à notifier
-      description: Liste des appareils mobiles qui recevront les notifications (optionnel).
-      default: []
+    notify_device:
+      name: Appareil mobile à notifier
+      description: Appareil mobile qui recevra la notification (optionnel).
       selector:
         device:
           integration: mobile_app
@@ -70,11 +69,11 @@ action:
       - conditions:
           - condition: template
             value_template: >
-              {{ notify_devices | length > 0 }}
+              {{ notify_device is not none }}
         sequence:
-          - service: notify.notify
+          - service: >
+              notify.mobile_app_{{ device_attr(notify_device, 'name') | slugify }}
             data:
-              target: !input notify_devices
               message: !input alert_message
 
   - choose:
