@@ -78,8 +78,7 @@ action:
             value_template: >
               {{ input.enable_phone_notifications and input.notify_device != '' }}
         sequence:
-          - service: >
-              notify.mobile_app_{{ device_attr(input.notify_device, 'name') | slugify }}
+          - service: notify.mobile_app_{{ device_attr(input.notify_device, 'name') | slugify }}
             data:
               message: !input alert_message
 
