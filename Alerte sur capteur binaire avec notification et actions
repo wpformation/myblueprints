@@ -18,9 +18,8 @@ blueprint:
       description: Liste des appareils mobiles qui recevront les notifications (optionnel).
       default: []
       selector:
-        target:
-          entity:
-            domain: notify
+        device:
+          integration: mobile_app
           multiple: true
     telegram_notifications:
       name: Activer les notifications Telegram
