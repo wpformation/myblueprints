@@ -59,9 +59,6 @@ blueprint:
           max: 600
           step: 5
 
-defaults:
-  mode: single
-
 trigger:
   - platform: state
     entity_id: !input binary_sensors
