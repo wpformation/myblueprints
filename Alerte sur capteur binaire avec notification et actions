@@ -48,9 +48,8 @@ blueprint:
       name: Lumières à activer
       description: Lumières à allumer en rouge pour signaler l'alerte
       selector:
-        target:
-          entity:
-            domain: light
+        entity:
+          domain: light
           multiple: true
     alert_message:
       name: Message d'alerte
@@ -105,8 +104,8 @@ action:
             value_template: "{{ input.lights | length > 0 }}"
         sequence:
           - service: light.turn_on
-            target: !input lights
             data:
+              entity_id: !input lights
               color_name: red
               brightness: 255
 
@@ -119,4 +118,5 @@ action:
             value_template: "{{ input.lights | length > 0 }}"
         sequence:
           - service: light.turn_off
-            target: !input lights
+            data:
+              entity_id: !input lights
