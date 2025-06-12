@@ -79,6 +79,7 @@ blueprint:
       selector:
         entity:
           domain: sensor
+          device_class: temperature
 
     seuil_temp_eau:
       name: Seuil T° max eau
