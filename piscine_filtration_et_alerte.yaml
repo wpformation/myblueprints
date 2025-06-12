@@ -2,9 +2,9 @@ blueprint:
   name: "Piscine - Filtration + Alertes avec notification"
   description: >
     Gère la filtration de piscine selon des horaires configurables.
-    Envoie un message à l’arrêt avec les valeurs mesurées.
+    Envoie un message à l'arrêt avec les valeurs mesurées.
     Envoie aussi une alerte si seuils critiques dépassés (T°, pH, Redox).
-    Choix entre Telegram, mobile ou les deux.
+    Choix entre Telegram, mobile ou les deux. Pause filtration possible.
   domain: automation
   input:
     start_time:
@@ -17,12 +17,12 @@ blueprint:
         time:
 
     pause_start:
-      name: Heure début de pause (facultatif)
+      name: Heure début de pause (optionnel)
       default: ""
       selector:
         time:
     pause_end:
-      name: Heure fin de pause (facultatif)
+      name: Heure fin de pause (optionnel)
       default: ""
       selector:
         time:
@@ -34,25 +34,27 @@ blueprint:
           domain: switch
 
     sensor_temp_eau:
-      name: Température de l’eau
+      name: Capteur température eau
       selector:
         entity:
           domain: sensor
+          device_class: temperature
     sensor_ph:
-      name: pH
+      name: Capteur pH
       selector:
         entity:
           domain: sensor
     sensor_redox:
-      name: Redox
+      name: Capteur Redox
       selector:
         entity:
           domain: sensor
     sensor_temp_poolhouse:
-      name: Température du pool house
+      name: Capteur température pool house
       selector:
         entity:
           domain: sensor
+          device_class: temperature
 
     seuil_temp_eau:
       name: Seuil T° max eau
@@ -87,20 +89,12 @@ blueprint:
           max: 1000
           step: 10
 
-    notify_telegram:
-      name: Notification Telegram
-      default: []
+    notification_target:
+      name: Cible(s) de notification
       selector:
-        entity:
-          multiple: true
-          domain: notify
-    notify_mobile:
-      name: Notification Mobile
-      default: []
-      selector:
-        entity:
-          multiple: true
-          domain: notify
+        target:
+          entity:
+            domain: notify
 
 trigger:
   - platform: time
@@ -121,13 +115,7 @@ action:
             conditions:
               - condition: template
                 value_template: >
-                  {{ not is_state('input_datetime.pause_start', '') and
-                     not is_state('input_datetime.pause_end', '') and
-                     (now().time() < state_attr('input_datetime.pause_start', 'timestamp') | timestamp_custom('%H:%M:%S')) or
-                     (now().time() > state_attr('input_datetime.pause_end', 'timestamp') | timestamp_custom('%H:%M:%S')) }}
-              - condition: template
-                value_template: >
-                  {{ is_state('input_datetime.pause_start', '') or is_state('input_datetime.pause_end', '') }}
+                  {{ (not pause_start or not pause_end) or (now().time() < strptime(pause_start, '%H:%M:%S').time()) or (now().time() > strptime(pause_end, '%H:%M:%S').time()) }}
         sequence:
           - service: switch.turn_on
             target:
@@ -146,56 +134,39 @@ action:
               ph: "{{ states(sensor_ph) | float }}"
               redox: "{{ states(sensor_redox) | float }}"
               t_pool: "{{ states(sensor_temp_poolhouse) | float }}"
-
-              seuil_t: !input seuil_temp_eau
-              seuil_ph_min: !input seuil_ph_min
-              seuil_ph_max: !input seuil_ph_max
-              seuil_redox: !input seuil_redox
-
-              alertes: >
-                {% set alert = [] %}
-                {% if t > seuil_t %}{{ alert.append("- 🌡️ Température élevée : " ~ t ~ " °C") }}{% endif %}
-                {% if ph < seuil_ph_min or ph > seuil_ph_max %}{{ alert.append("- 💧 pH hors plage : " ~ ph ~ " (attendu entre " ~ seuil_ph_min ~ " et " ~ seuil_ph_max ~ ")") }}{% endif %}
-                {% if redox < seuil_redox %}{{ alert.append("- ⚡ Redox trop faible : " ~ redox ~ " mV (attendu ≥ " ~ seuil_redox ~ ")") }}{% endif %}
-                {{ alert | join('\n') }}
-
               rapport: >
-                🏊 Pompe de la piscine **arrêtée**.
-                🔍 État relevé :
-                - 🌡️ Eau : {{ t }} °C
-                - 💧 pH : {{ ph }}
-                - ⚡ Redox : {{ redox }} mV
+                🏊 Pompe de la piscine **arrêtée**.\n🔍 État relevé :\n
+                - 🌡️ Eau : {{ t }} °C\n
+                - 💧 pH : {{ ph }}\n
+                - ⚡ Redox : {{ redox }} mV\n
                 - 🏠 Pool House : {{ t_pool }} °C
+              alertes: >
+                {% set lignes = [] %}
+                {% if t > seuil_temp_eau %}
+                  {% set lignes = lignes + ["- 🌡️ Température trop élevée : " ~ t ~ " °C"] %}
+                {% endif %}
+                {% if ph < seuil_ph_min or ph > seuil_ph_max %}
+                  {% set lignes = lignes + ["- 💧 pH hors plage : " ~ ph ~ " (attendu entre " ~ seuil_ph_min ~ " et " ~ seuil_ph_max ~ ")"] %}
+                {% endif %}
+                {% if redox < seuil_redox %}
+                  {% set lignes = lignes + ["- ⚡ Redox trop faible : " ~ redox ~ " mV (attendu ≥ " ~ seuil_redox ~ ")"] %}
+                {% endif %}
+                {{ lignes | join('\n') }}
 
-          - service: notify.notify
+          - service: notify.send_message
             data:
-              message: >
-                {{ rapport }}
-              target: !input notify_mobile
-
-          - service: notify.notify
-            data:
-              message: >
-                {{ rapport }}
-              target: !input notify_telegram
+              target: !input notification_target
+              message: "{{ rapport }}"
 
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ alertes != '' }}"
+                    value_template: "{{ alertes | length > 0 }}"
                 sequence:
-                  - service: notify.notify
+                  - service: notify.send_message
                     data:
+                      target: !input notification_target
                       message: >
-                        ⚠️ **Alerte Piscine - Valeurs critiques détectées**\n
-                        {{ alertes }}\n
+                        ⚠️ **Alerte Piscine - Valeurs critiques détectées**\n{{ alertes }}\n
                         ➤ Merci de vérifier la qualité de l’eau.
-                      target: !input notify_telegram
-                  - service: notify.notify
-                    data:
-                      message: >
-                        ⚠️ **Alerte Piscine - Valeurs critiques détectées**\n
-                        {{ alertes }}\n
-                        ➤ Merci de vérifier la qualité de l’eau.
-                      target: !input notify_mobile
 mode: single
