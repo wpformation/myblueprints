@@ -1,0 +1,201 @@
+blueprint:
+  name: "Piscine - Filtration + Alertes avec notification"
+  description: >
+    Gère la filtration de piscine selon des horaires configurables.
+    Envoie un message à l’arrêt avec les valeurs mesurées.
+    Envoie aussi une alerte si seuils critiques dépassés (T°, pH, Redox).
+    Choix entre Telegram, mobile ou les deux.
+  domain: automation
+  input:
+    start_time:
+      name: Heure début filtration
+      selector:
+        time:
+    end_time:
+      name: Heure fin filtration
+      selector:
+        time:
+
+    pause_start:
+      name: Heure début de pause (facultatif)
+      default: ""
+      selector:
+        time:
+    pause_end:
+      name: Heure fin de pause (facultatif)
+      default: ""
+      selector:
+        time:
+
+    switch_pompe:
+      name: Relais pompe
+      selector:
+        entity:
+          domain: switch
+
+    sensor_temp_eau:
+      name: Température de l’eau
+      selector:
+        entity:
+          domain: sensor
+    sensor_ph:
+      name: pH
+      selector:
+        entity:
+          domain: sensor
+    sensor_redox:
+      name: Redox
+      selector:
+        entity:
+          domain: sensor
+    sensor_temp_poolhouse:
+      name: Température du pool house
+      selector:
+        entity:
+          domain: sensor
+
+    seuil_temp_eau:
+      name: Seuil T° max eau
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 0.1
+    seuil_ph_min:
+      name: Seuil pH min
+      default: 7.1
+      selector:
+        number:
+          min: 6
+          max: 8
+          step: 0.05
+    seuil_ph_max:
+      name: Seuil pH max
+      default: 7.4
+      selector:
+        number:
+          min: 6
+          max: 8
+          step: 0.05
+    seuil_redox:
+      name: Seuil Redox min (mV)
+      default: 600
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 10
+
+    notify_telegram:
+      name: Notification Telegram
+      default: []
+      selector:
+        entity:
+          multiple: true
+          domain: notify
+    notify_mobile:
+      name: Notification Mobile
+      default: []
+      selector:
+        entity:
+          multiple: true
+          domain: notify
+
+trigger:
+  - platform: time
+    at: !input start_time
+    id: start
+  - platform: time
+    at: !input end_time
+    id: stop
+
+condition: []
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: start
+          - condition: or
+            conditions:
+              - condition: template
+                value_template: >
+                  {{ not is_state('input_datetime.pause_start', '') and
+                     not is_state('input_datetime.pause_end', '') and
+                     (now().time() < state_attr('input_datetime.pause_start', 'timestamp') | timestamp_custom('%H:%M:%S')) or
+                     (now().time() > state_attr('input_datetime.pause_end', 'timestamp') | timestamp_custom('%H:%M:%S')) }}
+              - condition: template
+                value_template: >
+                  {{ is_state('input_datetime.pause_start', '') or is_state('input_datetime.pause_end', '') }}
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: !input switch_pompe
+
+      - conditions:
+          - condition: trigger
+            id: stop
+        sequence:
+          - service: switch.turn_off
+            target:
+              entity_id: !input switch_pompe
+
+          - variables:
+              t: "{{ states(sensor_temp_eau) | float }}"
+              ph: "{{ states(sensor_ph) | float }}"
+              redox: "{{ states(sensor_redox) | float }}"
+              t_pool: "{{ states(sensor_temp_poolhouse) | float }}"
+
+              seuil_t: !input seuil_temp_eau
+              seuil_ph_min: !input seuil_ph_min
+              seuil_ph_max: !input seuil_ph_max
+              seuil_redox: !input seuil_redox
+
+              alertes: >
+                {% set alert = [] %}
+                {% if t > seuil_t %}{{ alert.append("- 🌡️ Température élevée : " ~ t ~ " °C") }}{% endif %}
+                {% if ph < seuil_ph_min or ph > seuil_ph_max %}{{ alert.append("- 💧 pH hors plage : " ~ ph ~ " (attendu entre " ~ seuil_ph_min ~ " et " ~ seuil_ph_max ~ ")") }}{% endif %}
+                {% if redox < seuil_redox %}{{ alert.append("- ⚡ Redox trop faible : " ~ redox ~ " mV (attendu ≥ " ~ seuil_redox ~ ")") }}{% endif %}
+                {{ alert | join('\n') }}
+
+              rapport: >
+                🏊 Pompe de la piscine **arrêtée**.
+                🔍 État relevé :
+                - 🌡️ Eau : {{ t }} °C
+                - 💧 pH : {{ ph }}
+                - ⚡ Redox : {{ redox }} mV
+                - 🏠 Pool House : {{ t_pool }} °C
+
+          - service: notify.notify
+            data:
+              message: >
+                {{ rapport }}
+              target: !input notify_mobile
+
+          - service: notify.notify
+            data:
+              message: >
+                {{ rapport }}
+              target: !input notify_telegram
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ alertes != '' }}"
+                sequence:
+                  - service: notify.notify
+                    data:
+                      message: >
+                        ⚠️ **Alerte Piscine - Valeurs critiques détectées**\n
+                        {{ alertes }}\n
+                        ➤ Merci de vérifier la qualité de l’eau.
+                      target: !input notify_telegram
+                  - service: notify.notify
+                    data:
+                      message: >
+                        ⚠️ **Alerte Piscine - Valeurs critiques détectées**\n
+                        {{ alertes }}\n
+                        ➤ Merci de vérifier la qualité de l’eau.
+                      target: !input notify_mobile
+mode: single
