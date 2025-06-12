@@ -2,13 +2,13 @@ blueprint:
   name: "Piscine - Filtration + Alertes avec notification"
   description: >
     Gère la filtration automatique de la piscine avec différents modes selon la saison (mode Été ou Hiver).
-    
+
     En mode Été : filtration avec horaire de début, de fin, et pause intermédiaire possible.
     En mode Hiver : filtration simple avec heure de début et de fin.
-    
+
     La pompe peut être désactivée manuellement via un interrupteur virtuel.
     En fin de cycle, un message Telegram ou mobile est envoyé avec les relevés de température, pH et redox (si capteurs renseignés).
-    
+
     En cas de dépassement de seuils critiques (T°, pH, Redox), une alerte est également envoyée.
   domain: automation
   input:
@@ -35,7 +35,6 @@ blueprint:
       selector:
         entity:
           domain: input_boolean
-      advanced: true
 
     start_time:
       name: Heure de début de filtration
