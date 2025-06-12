@@ -1,88 +1,99 @@
 blueprint:
   name: "Piscine - Filtration + Alertes avec notification"
   description: >
-    Gère la filtration de piscine selon des horaires configurables avec mode été et hiver.
-    En été : filtration avec horaire + pause possible.
-    En hiver : filtration simple. Notifications toujours actives.
-    Permet de désactiver complètement le comportement via un interrupteur manuel.
-    Envoie un message à l'arrêt avec les valeurs mesurées.
-    Envoie aussi une alerte si seuils critiques dépassés (T°, pH, Redox).
-    Choix entre Telegram, mobile ou les deux.
+    Gère la filtration automatique de la piscine avec différents modes selon la saison (mode Été ou Hiver).
+    
+    En mode Été : filtration avec horaire de début, de fin, et pause intermédiaire possible.
+    En mode Hiver : filtration simple avec heure de début et de fin.
+    
+    La pompe peut être désactivée manuellement via un interrupteur virtuel.
+    En fin de cycle, un message Telegram ou mobile est envoyé avec les relevés de température, pH et redox (si capteurs renseignés).
+    
+    En cas de dépassement de seuils critiques (T°, pH, Redox), une alerte est également envoyée.
   domain: automation
   input:
     mode_saison:
-      name: Mode saison
+      name: Mode de fonctionnement
+      description: >
+        Choisissez le mode selon la saison :
+        - Mode "Filtration été" avec possibilité de pause
+        - Mode "Filtration hiver" sans pause
       selector:
         select:
           options:
-            - ete
-            - hiver
+            - label: "Filtration été (avec pause possible)"
+              value: ete
+            - label: "Filtration hiver (continue)"
+              value: hiver
 
     disable_switch:
-      name: Interrupteur de désactivation manuelle
-      description: "Si activé, la filtration ne se lance pas, peu importe l'heure."
+      name: Arrêt manuel (facultatif)
+      description: >
+        Entité de type interrupteur virtuel (input_boolean) permettant de suspendre la filtration
+        manuellement, même si les horaires sont atteints.
       default: null
       selector:
         entity:
           domain: input_boolean
+      advanced: true
 
     start_time:
-      name: Heure début filtration (mode été ou hiver)
+      name: Heure de début de filtration
       selector:
         time:
     end_time:
-      name: Heure fin filtration (mode été ou hiver)
+      name: Heure de fin de filtration
       selector:
         time:
 
     pause_start:
-      name: Heure début de pause (mode été uniquement)
+      name: Heure de début de pause (mode été uniquement)
+      description: Plage horaire pendant laquelle la filtration est temporairement coupée.
       default: ""
       selector:
         time:
     pause_end:
-      name: Heure fin de pause (mode été uniquement)
+      name: Heure de fin de pause (mode été uniquement)
       default: ""
       selector:
         time:
 
     switch_pompe:
-      name: Relais pompe
+      name: Interrupteur/prise de la pompe de filtration
       selector:
         entity:
           domain: switch
 
     sensor_temp_eau:
-      name: Capteur température eau
+      name: Capteur de température de l'eau
       selector:
         entity:
           domain: sensor
           device_class: temperature
 
     sensor_ph:
-      name: Capteur pH (optionnel)
+      name: Capteur de pH (facultatif)
       default: ""
       selector:
         entity:
           domain: sensor
 
     sensor_redox:
-      name: Capteur Redox (optionnel)
+      name: Capteur de Redox (facultatif)
       default: ""
       selector:
         entity:
           domain: sensor
 
     sensor_temp_poolhouse:
-      name: Capteur température pool house (optionnel)
+      name: Capteur température pool house (facultatif)
       default: ""
       selector:
         entity:
           domain: sensor
-          device_class: temperature
 
     seuil_temp_eau:
-      name: Seuil T° max eau
+      name: Température max autorisée de l'eau (en °C)
       default: 30
       selector:
         number:
@@ -90,7 +101,7 @@ blueprint:
           max: 50
           step: 0.1
     seuil_ph_min:
-      name: Seuil pH min
+      name: Seuil pH minimum autorisé
       default: 7.1
       selector:
         number:
@@ -98,7 +109,7 @@ blueprint:
           max: 8
           step: 0.05
     seuil_ph_max:
-      name: Seuil pH max
+      name: Seuil pH maximum autorisé
       default: 7.4
       selector:
         number:
@@ -106,7 +117,7 @@ blueprint:
           max: 8
           step: 0.05
     seuil_redox:
-      name: Seuil Redox min (mV)
+      name: Redox minimum autorisé (en mV)
       default: 600
       selector:
         number:
@@ -115,98 +126,8 @@ blueprint:
           step: 10
 
     notification_target:
-      name: Cible(s) de notification
+      name: Cible(s) de notification (Telegram, mobile, etc.)
       selector:
         target:
           entity:
             domain: notify
-
-trigger:
-  - platform: time
-    at: !input start_time
-    id: start
-  - platform: time
-    at: !input end_time
-    id: stop
-
-condition:
-  - condition: or
-    conditions:
-      - condition: template
-        value_template: >
-          {{ disable_switch == none }}
-      - condition: state
-        entity_id: !input disable_switch
-        state: "off"
-
-action:
-  - choose:
-      - conditions:
-          - condition: trigger
-            id: start
-          - condition: template
-            value_template: >
-              {% if mode_saison == 'ete' %}
-                {{ (not pause_start or not pause_end) or
-                   (now().time() < strptime(pause_start, '%H:%M:%S').time()) or
-                   (now().time() > strptime(pause_end, '%H:%M:%S').time()) }}
-              {% else %} true {% endif %}
-        sequence:
-          - service: switch.turn_on
-            target:
-              entity_id: !input switch_pompe
-
-      - conditions:
-          - condition: trigger
-            id: stop
-        sequence:
-          - service: switch.turn_off
-            target:
-              entity_id: !input switch_pompe
-
-          - variables:
-              t: "{{ states(sensor_temp_eau) | float }}"
-              ph: >
-                {% if sensor_ph %}{{ states(sensor_ph) | float }}{% else %}none{% endif %}
-              redox: >
-                {% if sensor_redox %}{{ states(sensor_redox) | float }}{% else %}none{% endif %}
-              t_pool: >
-                {% if sensor_temp_poolhouse %}{{ states(sensor_temp_poolhouse) | float }}{% else %}none{% endif %}
-
-              rapport: >
-                🏊 Pompe de la piscine **arrêtée**.\n🔍 État relevé :\n
-                - 🌡️ Eau : {{ t }} °C
-                {% if ph != none %}- 💧 pH : {{ ph }}{% endif %}
-                {% if redox != none %}- ⚡ Redox : {{ redox }} mV{% endif %}
-                {% if t_pool != none %}- 🏠 Pool House : {{ t_pool }} °C{% endif %}
-
-              alertes: >
-                {% set lignes = [] %}
-                {% if t > seuil_temp_eau %}
-                  {% set lignes = lignes + ["- 🌡️ Température trop élevée : " ~ t ~ " °C"] %}
-                {% endif %}
-                {% if ph != none and (ph < seuil_ph_min or ph > seuil_ph_max) %}
-                  {% set lignes = lignes + ["- 💧 pH hors plage : " ~ ph ~ " (attendu entre " ~ seuil_ph_min ~ " et " ~ seuil_ph_max ~ ")"] %}
-                {% endif %}
-                {% if redox != none and redox < seuil_redox %}
-                  {% set lignes = lignes + ["- ⚡ Redox trop faible : " ~ redox ~ " mV (attendu ≥ " ~ seuil_redox ~ ")"] %}
-                {% endif %}
-                {{ lignes | join('\n') }}
-
-          - service: notify.send_message
-            data:
-              target: !input notification_target
-              message: "{{ rapport }}"
-
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ alertes | length > 0 }}"
-                sequence:
-                  - service: notify.send_message
-                    data:
-                      target: !input notification_target
-                      message: >
-                        ⚠️ **Alerte Piscine - Valeurs critiques détectées**\n{{ alertes }}\n
-                        ➤ Merci de vérifier la qualité de l’eau.
-mode: single
