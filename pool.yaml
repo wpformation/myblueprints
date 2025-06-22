@@ -169,9 +169,6 @@ variables:
     {% endif %}
     {{ '%02d:%02d:%02d' | format(extended_hour, normal_minute, normal_second) }}
   
-  # Seuil température pour comparaison
-  temp_threshold_value: "{{ temp_threshold | float(30) - 0.1 }}"
-  
   # Construction du message de surveillance
   sensor_status: >
     {% set status_parts = [] %}
@@ -280,7 +277,7 @@ action:
                   - condition: template
                     value_template: "{{ states(water_temp_sensor) | float(0) >= (temp_threshold | float(30)) }}"
                 sequence:
-                  # Pompe continue (pas d'action)
+                  # Pompe continue (pas d'action sur le switch)
                   - choose:
                       # Notification Telegram
                       - conditions:
