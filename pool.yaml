@@ -1,0 +1,399 @@
+blueprint:
+  name: "Gestion Pompe Piscine avec Prolongation Température"
+  description: >
+    Automatisation complète pour pompe de piscine avec :
+    - Programmation horaire flexible (démarrage, pause midi optionnelle, arrêt)
+    - Prolongation automatique si température eau élevée
+    - Notifications personnalisables (Telegram ou mobile)
+    - Surveillance des paramètres de qualité d'eau
+  domain: automation
+  input:
+    # === ENTITÉS PRINCIPALES ===
+    pump_switch:
+      name: "Switch de la pompe"
+      description: "Entité switch qui contrôle votre pompe de piscine"
+      selector:
+        entity:
+          domain: switch
+    
+    water_temp_sensor:
+      name: "Capteur température de l'eau"
+      description: "Capteur qui mesure la température de l'eau de la piscine"
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+    
+    lock_boolean:
+      name: "Boolean de verrouillage (optionnel)"
+      description: "Input boolean pour désactiver temporairement l'automation (recommandé pour maintenance)"
+      default: {}
+      selector:
+        entity:
+          domain: input_boolean
+    
+    # === HORAIRES ===
+    start_time:
+      name: "Heure de démarrage"
+      description: "Heure à laquelle la pompe démarre le matin"
+      default: "09:03:00"
+      selector:
+        time:
+    
+    enable_lunch_pause:
+      name: "Activer la pause de midi"
+      description: "Cochez pour programmer une pause à midi (économie d'énergie)"
+      default: true
+      selector:
+        boolean:
+    
+    pause_start_time:
+      name: "Début de la pause midi"
+      description: "Heure de début de la pause (seulement si pause activée)"
+      default: "12:03:00"
+      selector:
+        time:
+    
+    pause_end_time:
+      name: "Fin de la pause midi"
+      description: "Heure de reprise après la pause (seulement si pause activée)"
+      default: "13:33:00"
+      selector:
+        time:
+    
+    normal_stop_time:
+      name: "Heure d'arrêt normal"
+      description: "Heure d'arrêt normale de la pompe (peut être prolongée selon température)"
+      default: "20:01:00"
+      selector:
+        time:
+    
+    # === PROLONGATION TEMPÉRATURE ===
+    temp_threshold:
+      name: "Seuil de température pour prolongation"
+      description: "Température eau (°C) qui déclenche une prolongation de filtration"
+      default: 30
+      selector:
+        number:
+          min: 25
+          max: 35
+          step: 0.5
+          unit_of_measurement: "°C"
+    
+    extension_duration:
+      name: "Durée de prolongation"
+      description: "Nombre d'heures supplémentaires de filtration si température élevée"
+      default: 2
+      selector:
+        number:
+          min: 0.5
+          max: 4
+          step: 0.5
+          unit_of_measurement: "h"
+    
+    # === CAPTEURS OPTIONNELS POUR SURVEILLANCE ===
+    ph_sensor:
+      name: "Capteur pH (optionnel)"
+      description: "Capteur pH pour suivi qualité eau dans les notifications"
+      default: {}
+      selector:
+        entity:
+          domain: sensor
+    
+    redox_sensor:
+      name: "Capteur Redox (optionnel)"
+      description: "Capteur Redox/ORP pour suivi désinfection dans les notifications"
+      default: {}
+      selector:
+        entity:
+          domain: sensor
+    
+    temp_ambient_sensor:
+      name: "Capteur température ambiante (optionnel)"
+      description: "Température pool house ou extérieure pour contexte"
+      default: {}
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+    
+    additional_sensor_1:
+      name: "Capteur supplémentaire 1 (optionnel)"
+      description: "Capteur libre pour surveillance (chlore, conductivité, etc.)"
+      default: {}
+      selector:
+        entity:
+          domain: sensor
+    
+    additional_sensor_2:
+      name: "Capteur supplémentaire 2 (optionnel)"
+      description: "Capteur libre pour surveillance (turbidité, niveau, etc.)"
+      default: {}
+      selector:
+        entity:
+          domain: sensor
+    
+    # === NOTIFICATIONS ===
+    notification_type:
+      name: "Type de notification"
+      description: "Choisissez comment recevoir les notifications d'état"
+      default: "telegram"
+      selector:
+        select:
+          options:
+            - value: "telegram"
+              label: "Telegram"
+            - value: "mobile"
+              label: "Application mobile"
+            - value: "both"
+              label: "Telegram + Mobile"
+    
+    mobile_device:
+      name: "Appareil mobile (si sélectionné)"
+      description: "Service de notification mobile (ex: notify.mobile_app_mon_telephone)"
+      default: "notify.mobile_app_s24"
+      selector:
+        text:
+
+# === VARIABLES CALCULÉES ===
+variables:
+  # Calcul heure d'arrêt prolongé
+  extended_stop_time: >
+    {% set normal_time = extension_duration | float(2) %}
+    {% set normal_hour = normal_stop_time.split(':')[0] | int %}
+    {% set normal_minute = normal_stop_time.split(':')[1] | int %}
+    {% set normal_second = normal_stop_time.split(':')[2] | int %}
+    {% set extended_hour = normal_hour + normal_time %}
+    {% if extended_hour >= 24 %}
+      {% set extended_hour = extended_hour - 24 %}
+    {% endif %}
+    {{ '%02d:%02d:%02d' | format(extended_hour, normal_minute, normal_second) }}
+  
+  # Construction du message de surveillance
+  sensor_status: >
+    {% set status_parts = [] %}
+    {% set status_parts = status_parts + ['🌡️ Eau : ' + states(water_temp_sensor) + ' °C'] %}
+    {% if ph_sensor != {} %}
+      {% set status_parts = status_parts + ['💧 pH : ' + states(ph_sensor)] %}
+    {% endif %}
+    {% if redox_sensor != {} %}
+      {% set status_parts = status_parts + ['⚡ Redox : ' + states(redox_sensor) + ' mV'] %}
+    {% endif %}
+    {% if temp_ambient_sensor != {} %}
+      {% set status_parts = status_parts + ['🏠 T° ambiante : ' + states(temp_ambient_sensor) + ' °C'] %}
+    {% endif %}
+    {% if additional_sensor_1 != {} %}
+      {% set sensor_name = state_attr(additional_sensor_1, 'friendly_name') or 'Capteur 1' %}
+      {% set unit = state_attr(additional_sensor_1, 'unit_of_measurement') or '' %}
+      {% set status_parts = status_parts + ['📊 ' + sensor_name + ' : ' + states(additional_sensor_1) + ' ' + unit] %}
+    {% endif %}
+    {% if additional_sensor_2 != {} %}
+      {% set sensor_name = state_attr(additional_sensor_2, 'friendly_name') or 'Capteur 2' %}
+      {% set unit = state_attr(additional_sensor_2, 'unit_of_measurement') or '' %}
+      {% set status_parts = status_parts + ['📊 ' + sensor_name + ' : ' + states(additional_sensor_2) + ' ' + unit] %}
+    {% endif %}
+    {{ status_parts | join('\n- ') }}
+
+# === DÉCLENCHEURS ===
+trigger:
+  # Démarrage
+  - platform: time
+    at: !input start_time
+    id: start
+  
+  # Pause midi (conditionnel)
+  - platform: time
+    at: !input pause_start_time
+    id: pause_start
+    enabled: !input enable_lunch_pause
+  
+  # Reprise après pause (conditionnel)
+  - platform: time
+    at: !input pause_end_time
+    id: pause_end
+    enabled: !input enable_lunch_pause
+  
+  # Vérification température + arrêt conditionnel
+  - platform: time
+    at: !input normal_stop_time
+    id: temp_check_stop
+  
+  # Arrêt après prolongation
+  - platform: time
+    at: "{{ extended_stop_time }}"
+    id: extended_stop
+
+# === CONDITIONS ===
+condition:
+  # Vérification boolean de verrouillage (si fourni)
+  - condition: or
+    conditions:
+      - condition: template
+        value_template: "{{ lock_boolean == {} }}"
+      - condition: state
+        entity_id: !input lock_boolean
+        state: "off"
+
+# === ACTIONS ===
+action:
+  - choose:
+      # === DÉMARRAGE ET REPRISE ===
+      - conditions:
+          - condition: trigger
+            id:
+              - start
+              - pause_end
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: !input pump_switch
+          - service: logbook.log
+            data:
+              name: "Pompe Piscine"
+              message: >
+                Démarrage pompe - {{ 'Début journée' if trigger.id == 'start' else 'Reprise après pause midi' }}
+      
+      # === PAUSE MIDI ===
+      - conditions:
+          - condition: trigger
+            id: pause_start
+        sequence:
+          - service: switch.turn_off
+            target:
+              entity_id: !input pump_switch
+          - service: logbook.log
+            data:
+              name: "Pompe Piscine"
+              message: "Pause midi - Économie d'énergie"
+      
+      # === VÉRIFICATION TEMPÉRATURE À L'ARRÊT NORMAL ===
+      - conditions:
+          - condition: trigger
+            id: temp_check_stop
+        sequence:
+          - choose:
+              # PROLONGATION si température élevée
+              - conditions:
+                  - condition: numeric_state
+                    entity_id: !input water_temp_sensor
+                    above: "{{ temp_threshold - 0.1 }}"
+                sequence:
+                  # Pompe continue (pas d'action)
+                  - choose:
+                      # Notification Telegram
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ notification_type in ['telegram', 'both'] }}"
+                        sequence:
+                          - service: telegram_bot.send_message
+                            data:
+                              message: >
+                                🏊 **PROLONGATION FILTRATION** (+{{ extension_duration }}h)
+                                🌡️ Température eau : {{ states(water_temp_sensor) }} °C (≥ {{ temp_threshold }}°C)
+                                ⏰ Pompe continue jusqu'à {{ extended_stop_time }} pour optimiser la filtration.
+                                
+                                📊 État actuel :
+                                - {{ sensor_status }}
+                      
+                      # Notification Mobile
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ notification_type in ['mobile', 'both'] }}"
+                        sequence:
+                          - service: "{{ mobile_device }}"
+                            data:
+                              title: "🏊 Prolongation Filtration"
+                              message: >
+                                Température {{ states(water_temp_sensor) }}°C ≥ {{ temp_threshold }}°C. 
+                                Pompe continue +{{ extension_duration }}h jusqu'à {{ extended_stop_time }}.
+                  
+                  - service: logbook.log
+                    data:
+                      name: "Pompe Piscine"
+                      message: >
+                        Prolongation {{ extension_duration }}h - Température {{ states(water_temp_sensor) }}°C
+            default:
+              # ARRÊT NORMAL si température acceptable
+              - service: switch.turn_off
+                target:
+                  entity_id: !input pump_switch
+              
+              - choose:
+                  # Notification Telegram
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ notification_type in ['telegram', 'both'] }}"
+                    sequence:
+                      - service: telegram_bot.send_message
+                        data:
+                          message: >
+                            🏊 Pompe de la piscine **arrêtée** ({{ normal_stop_time }}).
+                            🔍 État relevé :
+                            - {{ sensor_status }}
+                  
+                  # Notification Mobile
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ notification_type in ['mobile', 'both'] }}"
+                    sequence:
+                      - service: "{{ mobile_device }}"
+                        data:
+                          title: "🏊 Pompe Arrêtée"
+                          message: >
+                            Arrêt normal à {{ normal_stop_time }}. 
+                            Température eau : {{ states(water_temp_sensor) }}°C.
+              
+              - service: logbook.log
+                data:
+                  name: "Pompe Piscine"
+                  message: >
+                    Arrêt normal - Température {{ states(water_temp_sensor) }}°C (< {{ temp_threshold }}°C)
+      
+      # === ARRÊT APRÈS PROLONGATION ===
+      - conditions:
+          - condition: trigger
+            id: extended_stop
+        sequence:
+          # Vérifier que la pompe est encore ON (prolongation était active)
+          - condition: state
+            entity_id: !input pump_switch
+            state: "on"
+          
+          - service: switch.turn_off
+            target:
+              entity_id: !input pump_switch
+          
+          - choose:
+              # Notification Telegram
+              - conditions:
+                  - condition: template
+                    value_template: "{{ notification_type in ['telegram', 'both'] }}"
+                sequence:
+                  - service: telegram_bot.send_message
+                    data:
+                      message: >
+                        🏊 Pompe de la piscine **arrêtée** ({{ extended_stop_time }} - fin prolongation).
+                        🌡️ Filtration prolongée terminée (+{{ extension_duration }}h).
+                        
+                        🔍 État final relevé :
+                        - {{ sensor_status }}
+              
+              # Notification Mobile
+              - conditions:
+                  - condition: template
+                    value_template: "{{ notification_type in ['mobile', 'both'] }}"
+                sequence:
+                  - service: "{{ mobile_device }}"
+                    data:
+                      title: "🏊 Fin Prolongation"
+                      message: >
+                        Filtration prolongée terminée à {{ extended_stop_time }}. 
+                        Durée supplémentaire : {{ extension_duration }}h.
+          
+          - service: logbook.log
+            data:
+              name: "Pompe Piscine"
+              message: >
+                Fin prolongation {{ extension_duration }}h - Température finale {{ states(water_temp_sensor) }}°C
+
+mode: single
